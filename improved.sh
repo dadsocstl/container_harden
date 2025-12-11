@@ -192,11 +192,13 @@ select_image() {
         log "Select container image to scan (static analysis only — never runs):"
         echo
         echo "   1) List local images"
-        echo "   2) Type remote image (e.g. nginx:latest)"
-        echo "   3) Load from .tar/.tar.gz file"
-        echo "   4) Manual entry (exact name or ID)"
+        echo "   2) List all containers (running/stopped)"
+        echo "   3) Type remote image (e.g. nginx:latest)"
+        echo "   4) Load from .tar/.tar.gz file (recursive search)"
+        echo "   5) Build from Dockerfile (with Iron Bank base)"
+        echo "   6) Manual entry (exact name or ID)"
         echo
-        read -p "Choose [1-4]: " choice
+        read -p "Choose [1-6]: " choice
 
         case "$choice" in
             1)
@@ -235,6 +237,43 @@ select_image() {
                 ;;
 
             2)
+                # List all containers (running and stopped)
+                if ! docker ps -a --format "{{.Names}} {{.Image}} {{.Status}}" > /dev/null 2>&1; then
+                    log "Docker command failed — is Docker running?"
+                    read -p "Press Enter to continue..."
+                    continue
+                fi
+
+                mapfile -t containers < <(docker ps -a --format "{{.Names}}|{{.Image}}|{{.Status}}")
+
+                if [ ${#containers[@]} -eq 0 ]; then
+                    log "No containers found."
+                    read -p "Press Enter to continue..."
+                    continue
+                fi
+
+                echo
+                printf "   %-4s %-20s %-30s %s\n" "No" "Container Name" "Image" "Status"
+                printf "   %-4s %-20s %-30s %s\n" "---" "--------------" "-----" "------"
+                for i in "${!containers[@]}"; do
+                    IFS='|' read -r name image status <<< "${containers[i]}"
+                    printf "   %3d) %-20s %-30s %s\n" $((i+1)) "$name" "$image" "$status"
+                done
+                echo
+
+                while true; do
+                    read -p "Enter number to scan its image: " num
+                    if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#containers[@]} )); then
+                        IFS='|' read -r name image status <<< "${containers[$((num-1))]}"
+                        IMAGE_NAME="$image"
+                        log "Selected image from container '$name': $IMAGE_NAME"
+                        return 0
+                    fi
+                    echo "Invalid number — try again."
+                done
+                ;;
+
+            3)
                 while true; do
                     read -p "Enter remote image (e.g. alpine:latest): " IMAGE_NAME
                     [[ -n "$IMAGE_NAME" ]] && return 0
@@ -242,13 +281,17 @@ select_image() {
                 done
                 ;;
 
-            3)
-                mapfile -t tars < <(find . -maxdepth 2 -type f -name "*.tar*" | sort)
+            4)
+                log "Searching for .tar/.tar.gz files recursively..."
+                mapfile -t tars < <(find . -type f \( -name "*.tar" -o -name "*.tar.gz" -o -name "*.tgz" \) | sort)
                 if [ ${#tars[@]} -eq 0 ]; then
-                    log "No .tar/.tar.gz files found."
-                    read -p "Press Enter..."
+                    log "No .tar/.tar.gz/.tgz files found in current directory tree."
+                    read -p "Press Enter to continue..."
                     continue
                 fi
+                echo
+                printf "   %-4s %s\n" "No" "Tar File"
+                printf "   %-4s %s\n" "---" "--------"
                 for i in "${!tars[@]}"; do
                     printf "   %3d) %s\n" $((i+1)) "${tars[i]}"
                 done
@@ -260,7 +303,7 @@ select_image() {
                     elif [[ -f "$input" ]]; then
                         TAR_FILE="$input"
                     else
-                        echo "Invalid — try again."
+                        echo "Invalid selection — try again."
                         continue
                     fi
                     break
@@ -270,18 +313,97 @@ select_image() {
                 if docker load -i "$TAR_FILE" > /tmp/load.log 2>&1; then
                     IMAGE_NAME=$(awk '/Loaded image:/ {print $3}' /tmp/load.log | tail -n1)
                     rm -f /tmp/load.log
-                    [[ -n "$IMAGE_NAME" ]] && return 0
+                    if [[ -n "$IMAGE_NAME" ]]; then
+                        log "Successfully loaded image: $IMAGE_NAME"
+                        return 0
+                    fi
                 fi
-                log "Failed to load image"
+                log "Failed to load image from tar file"
                 continue
                 ;;
 
-            4)
+            5)
+                # Build from Dockerfile with Iron Bank base
+                echo
+                echo "Build Options:"
+                echo "   1) Use existing Dockerfile"
+                echo "   2) Create temp Dockerfile with Iron Bank base"
+                echo
+                read -p "Choose [1-2]: " build_choice
+
+                case "$build_choice" in
+                    1)
+                        if [[ ! -f "Dockerfile" ]]; then
+                            log "No Dockerfile found in current directory"
+                            continue
+                        fi
+                        IMAGE_TAG="temp-build-$(date +%s)"
+                        log "Building from existing Dockerfile..."
+                        ;;
+                    2)
+                        # Create temporary Dockerfile with Iron Bank base
+                        TEMP_DOCKERFILE="/tmp/Dockerfile.ironbank.$$"
+                        cat > "$TEMP_DOCKERFILE" << 'EOF'
+FROM repo1.dso.mil/dsop/redhat/ubi/8.x/ubi8-micro:latest
+
+# Add your application files here
+# COPY . /app
+# WORKDIR /app
+# RUN microdnf install -y [packages] && microdnf clean all
+# CMD ["your-command"]
+
+# Default: just copy everything for scanning
+COPY . /scan
+WORKDIR /scan
+EOF
+                        IMAGE_TAG="ironbank-temp-$(date +%s)"
+                        log "Created temporary Dockerfile with Iron Bank base"
+                        DOCKERFILE_PATH="$TEMP_DOCKERFILE"
+                        
+                        # Ask about volume mounts
+                        echo
+                        read -p "Add volume mounts? (y/N): " add_mounts
+                        if [[ "$add_mounts" =~ ^[Yy]$ ]]; then
+                            MOUNTS=""
+                            while true; do
+                                read -p "Enter mount (host:container) or empty to finish: " mount
+                                [[ -z "$mount" ]] && break
+                                MOUNTS="$MOUNTS -v $mount"
+                            done
+                            [[ -n "$MOUNTS" ]] && log "Will mount volumes: $MOUNTS"
+                        fi
+                        ;;
+                    *)
+                        echo "Invalid choice"
+                        continue
+                        ;;
+                esac
+
+                # Build the image
+                BUILD_CMD="docker build"
+                [[ -n "${DOCKERFILE_PATH:-}" ]] && BUILD_CMD="$BUILD_CMD -f $DOCKERFILE_PATH"
+                BUILD_CMD="$BUILD_CMD -t $IMAGE_TAG ."
+
+                log "Building image with command: $BUILD_CMD"
+                if eval "$BUILD_CMD"; then
+                    IMAGE_NAME="$IMAGE_TAG"
+                    log "Successfully built image: $IMAGE_NAME"
+                    # Clean up temp dockerfile if created
+                    [[ -n "${DOCKERFILE_PATH:-}" ]] && rm -f "$DOCKERFILE_PATH"
+                    return 0
+                else
+                    log "Failed to build image"
+                    [[ -n "${DOCKERFILE_PATH:-}" ]] && rm -f "$DOCKERFILE_PATH"
+                    continue
+                fi
+                ;;
+
+            6)
                 read -p "Enter exact image name/ID: " IMAGE_NAME
                 [[ -n "$IMAGE_NAME" ]] && return 0
                 ;;
 
-            *) echo "Invalid choice — pick 1-4" ;;
+            *) echo "Invalid choice — pick 1-6" ;;
         esac
     done
 }
