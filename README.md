@@ -1,52 +1,252 @@
-<div align="center">
-<img src="docs/imgs/logo.png" width="200">
+# STL Cyber - Container Security Scanner 🛡️
 
-[![GitHub Release][release-img]][release]
-[![Test][test-img]][test]
-[![Go Report Card][go-report-img]][go-report]
-[![License: Apache-2.0][license-img]][license]
-[![GitHub Downloads][github-downloads-img]][release]
-![Docker Pulls][docker-pulls]
+**DoD Edition with CFIUS Compliance, OSS License Validation, and NIST 800-53 Mapping**
 
-[📖 Documentation][docs]
-</div>
+## Features
 
-Trivy ([pronunciation][pronunciation]) is a comprehensive and versatile security scanner.
-Trivy has *scanners* that look for security issues, and *targets* where it can find those issues.
+✅ **Comprehensive Security Scanning**
+- Vulnerability detection (CRITICAL/HIGH/MEDIUM/LOW)
+- Secret exposure detection
+- Misconfiguration analysis
+- License compliance validation
 
-Targets (what Trivy can scan):
+✅ **DoD Compliance**
+- CFIUS foreign ownership analysis
+- OSI license validation per DoD CIO Memo (Oct 2009)
+- NIST SP 800-53 Rev5 mapping
+- Executive Order 13873 compliance
+- NDAA Section 889 checks
 
-- Container Image
-- Filesystem
-- Git Repository (remote)
-- Virtual Machine Image
-- Kubernetes
-- AWS
+✅ **Threat Intelligence**
+- Cross-reference with NVD, CERT/CC, Exploit-DB, Talos Intelligence
+- Direct links to vulnerability databases
+- Exploit availability checks
 
-Scanners (what Trivy can find there):
+✅ **Enterprise Reporting**
+- Unified compliance CSV for tracking
+- HTML reports with visual styling
+- JSON/TXT for automation
+- SBOM (CycloneDX)
+- MITRE SAF HDF (eMASS-ready)
+- OpenSCAP XCCDF
+- DISA STIG Viewer CKL
 
-- OS packages and software dependencies in use (SBOM)
-- Known vulnerabilities (CVEs)
-- IaC issues and misconfigurations
-- Sensitive information and secrets
-- Software licenses
+## Quick Start 🚀
 
-Trivy supports most popular programming languages, operating systems, and platforms. For a complete list, see the [Scanning Coverage] page.
+### Pull the Image
 
-To learn more, go to the [Trivy homepage][homepage] for feature highlights, or to the [Documentation site][docs] for detailed information.
+```bash
+docker pull stlcyber/container-scanner:latest
+```
 
-## Quick Start
+### Run a Scan
 
-### Get Trivy
+```bash
+# Basic scan
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd)/results:/results \
+  stlcyber/container-scanner:latest ubuntu:20.04
 
-Trivy is available in most common distribution channels. The full list of installation options is available in the [Installation] page. Here are a few popular examples:
+# Scan with custom output directory
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd)/results:/results \
+  stlcyber/container-scanner:latest myapp:latest /results/myapp-scan
+```
 
-- `brew install trivy`
-- `docker run aquasec/trivy`
-- Download binary from <https://github.com/aquasecurity/trivy/releases/latest/>
-- See [Installation] for more
+### Windows (PowerShell)
 
-Trivy is integrated with many popular platforms and applications. The complete list of integrations is available in the [Ecosystem] page. Here are a few popular examples:
+```powershell
+docker run --rm `
+  -v /var/run/docker.sock:/var/run/docker.sock `
+  -v ${PWD}/results:/results `
+  stlcyber/container-scanner:latest ubuntu:20.04
+```
+
+## Output Reports 📊
+
+After scanning, you'll find these reports in your output directory:
+
+### 📊 Unified Compliance Report
+- **CSV**: `*_unified_compliance_*.csv` - Risk classification (CRITICAL/HIGH/MEDIUM/LOW), country of origin, license status
+- **TXT**: Detailed analysis with regulatory references
+- **JSON**: Machine-readable for automation
+- **HTML**: Visual report with styling
+
+### 🌍 Foreign Ownership Analysis
+- **TXT**: CFIUS compliance report with country breakdown
+- **JSON**: Structured data for supply chain risk management
+- Identifies packages from China, Russia, Iran, North Korea 🇨🇳🇷🇺🇮🇷🇰🇵
+- Maps to DoD supply chain risk frameworks
+
+### 🛡️ Vulnerability Reports
+- **HTML**: Color-coded severity tables
+- **TBL**: Text-based tables with Unicode
+- **JSON**: Full vulnerability details with CVE IDs
+
+### 📜 License Compliance
+- **HTML**: License tables with package mapping
+- **JSON**: OSI validation results
+- **TXT**: DoD approval required packages
+
+### 🔍 Threat Intelligence
+- **HTML**: Clickable links to NVD, CERT/CC, Exploit-DB, Talos
+- **JSON**: Cross-reference data for automation
+
+### 📋 SBOM & Compliance
+- **CycloneDX**: Software Bill of Materials
+- **HDF**: MITRE SAF format (eMASS upload ready)
+- **XCCDF**: OpenSCAP compliance
+- **CKL**: DISA STIG Viewer format
+
+## Risk Classification ⚠️
+
+| Risk Level | Criteria | Action Required |
+|-----------|----------|-----------------|
+| **CRITICAL** 🔴 | Foreign adversary nation (CN/RU/IR/KP) + Non-OSI license | Immediate review, seek alternatives |
+| **HIGH** 🟠 | Foreign origin (any non-US) | Supply chain risk assessment |
+| **MEDIUM** 🟡 | Non-OSI license | DoD approval required |
+| **LOW** 🟢 | US origin + OSI approved | Standard deployment |
+
+## Architecture 🏗️
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Docker Container                         │
+├─────────────────────────────────────────────────────────────┤
+│  Ubuntu 22.04 Base                                         │
+│  • Trivy Security Scanner                                   │
+│  • Python 3 + jq                                           │
+│  • Docker client (uses host socket)                        │
+├─────────────────────────────────────────────────────────────┤
+│  Scripts & Databases                                        │
+│  • improved.sh (main orchestrator)                         │
+│  • OSI license database (188 licenses)                     │
+│  • Country origin database (100+ packages)                 │
+│  • Python converters (TBL→HTML, NIST mapping)              │
+└─────────────────────────────────────────────────────────────┘
+         ↓                                    ↓
+   /var/run/docker.sock           /results (output)
+   (host Docker access)           (scan results)
+```
+
+## Requirements 📋
+
+- Docker installed on host 🐳
+- Docker socket access (`/var/run/docker.sock`)
+- 2GB RAM minimum 💾
+- Internet connection (for pulling images and databases) 🌐
+
+## Environment Variables ⚙️
+
+```bash
+# Optional: Cache directory for Trivy
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd)/results:/results \
+  -v $(pwd)/trivy-cache:/app/.trivy-cache \
+  stlcyber/container-scanner:latest ubuntu:20.04
+```
+
+## Use Cases 🔧
+
+### 1. CI/CD Pipeline Integration
+
+```yaml
+# GitLab CI example
+container_scan:
+  stage: security
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker pull stlcyber/container-scanner:latest
+    - docker run --rm 
+        -v /var/run/docker.sock:/var/run/docker.sock 
+        -v $(pwd)/results:/results 
+        stlcyber/container-scanner:latest $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+  artifacts:
+    paths:
+      - results/
+    expire_in: 30 days
+```
+
+### 2. Pre-Deployment Validation
+
+```bash
+#!/bin/bash
+# pre-deploy.sh
+IMAGE="$1"
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd)/compliance-reports:/results \
+  stlcyber/container-scanner:latest "$IMAGE"
+
+# Check for CRITICAL findings
+if grep -q "CRITICAL" results/*/reports/*_unified_compliance_*.csv; then
+  echo "CRITICAL findings detected - deployment blocked ❌"
+  exit 1
+fi
+```
+
+### 3. Supply Chain Audit
+
+```bash
+# Scan entire registry
+for image in $(docker images --format "{{.Repository}}:{{.Tag}}"); do
+  docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v $(pwd)/audit-results:/results \
+    stlcyber/container-scanner:latest "$image" "/results/${image//\//_}"
+done
+
+# Generate consolidated report
+cat audit-results/*/reports/*_unified_compliance_*.csv > supply_chain_audit.csv
+```
+
+## Building from Source 🛠️
+
+```bash
+# Clone repository
+git clone https://github.com/dadsocstl/container_harden.git
+cd container_harden
+
+# Build image
+docker build -t stlcyber/container-scanner:latest .
+
+# Test
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd)/results:/results \
+  stlcyber/container-scanner:latest ubuntu:20.04
+```
+
+## Compliance References 📚
+
+- **CFIUS**: Committee on Foreign Investment in the United States
+- **EO 13873**: Securing the Information and Communications Technology and Services Supply Chain
+- **NDAA Section 889**: Prohibition on Certain Telecommunications Equipment
+- **DoD CIO Memo**: Clarifying Guidance Regarding Open Source Software (Oct 16, 2009)
+- **NIST SP 800-161**: Cybersecurity Supply Chain Risk Management
+- **NIST SP 800-53 Rev5**: Security and Privacy Controls
+
+## Support 🆘
+
+For issues, feature requests, or questions:
+- GitHub Issues: https://github.com/dadsocstl/container_harden/issues
+- Documentation: See `UNIFIED_COMPLIANCE_CSV_REFERENCE.md` for CSV format details
+
+## License 📄
+
+MIT License - See LICENSE file for details
+
+## Credits 🙏
+
+Developed by: 3290178  
+Organization: DoD Cyber Security  
+Version: 2025.1  
+Last Updated: December 2025
 
 - [GitHub Actions](https://github.com/aquasecurity/trivy-action)
 - [Kubernetes operator](https://github.com/aquasecurity/trivy-operator)
