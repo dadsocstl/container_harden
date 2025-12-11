@@ -42,6 +42,56 @@ convert_tbl_to_html() {
     python3 "$SCRIPT_DIR/convert_tbl_to_html.py" "$input_file" "$output_file"
 }
 
+# Function to create Dockerfile from SBOM
+create_dockerfile_from_sbom() {
+    local sbom_file="$1"
+    local dockerfile_path="$2"
+    
+    log "Parsing SBOM to extract packages..."
+    
+    # Determine SBOM format and extract packages
+    if grep -q "CycloneDX" "$sbom_file" 2>/dev/null; then
+        # CycloneDX format
+        PACKAGES=$(jq -r '.components[]? | select(.type == "library") | "\(.name)=\(.version)"' "$sbom_file" 2>/dev/null | head -20)
+    elif grep -q "SPDX" "$sbom_file" 2>/dev/null; then
+        # SPDX format
+        PACKAGES=$(jq -r '.packages[]? | select(.name) | "\(.name)=\(.versionInfo // "latest")"' "$sbom_file" 2>/dev/null | head -20)
+    else
+        # Try generic JSON parsing
+        PACKAGES=$(jq -r '.. | select(.name? and .version?) | "\(.name)=\(.version)"' "$sbom_file" 2>/dev/null | head -20)
+    fi
+    
+    if [[ -z "$PACKAGES" ]]; then
+        log "Could not extract packages from SBOM"
+        return 1
+    fi
+    
+    # Determine base image (try to infer from packages)
+    BASE_IMAGE="ubuntu:22.04"
+    if echo "$PACKAGES" | grep -q "python"; then
+        BASE_IMAGE="python:3.11-slim"
+    elif echo "$PACKAGES" | grep -q "node"; then
+        BASE_IMAGE="node:18-slim"
+    elif echo "$PACKAGES" | grep -q "ruby"; then
+        BASE_IMAGE="ruby:3.1-slim"
+    fi
+    
+    # Create Dockerfile
+    cat > "$dockerfile_path" << EOF
+FROM $BASE_IMAGE
+
+# Install packages extracted from SBOM
+RUN apt-get update && apt-get install -y \\
+$(echo "$PACKAGES" | awk -F'=' '{print "    " $1}' | tr '\n' ' \\\n') \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Default command
+CMD ["bash"]
+EOF
+    
+    log "Created Dockerfile with $(echo "$PACKAGES" | wc -l) packages from SBOM"
+}
+
 # === MAIN ===
 clear 2>/dev/null || true
 cat << "EOF"
@@ -332,18 +382,64 @@ select_image() {
                         SBOM_FILE="${all_sboms[$((num-1))]}"
                         log "Selected SBOM file: $SBOM_FILE"
                         
-                        # Try to extract image name from SBOM
-                        if grep -q "image" "$SBOM_FILE" 2>/dev/null; then
-                            IMAGE_NAME=$(grep -o '"image"[^"]*"[^"]*"' "$SBOM_FILE" | head -1 | sed 's/.*"image"[^"]*"//' | sed 's/".*//')
-                            [[ -n "$IMAGE_NAME" ]] && log "Extracted image name from SBOM: $IMAGE_NAME"
-                        fi
+                        echo
+                        echo "SBOM Options:"
+                        echo "   1) Extract image name and scan existing image"
+                        echo "   2) Build new container from SBOM packages"
+                        echo
+                        read -p "Choose [1-2]: " sbom_choice
                         
-                        if [[ -z "$IMAGE_NAME" ]]; then
-                            log "Could not extract image name from SBOM. Please enter manually:"
-                            read -p "Enter image name: " IMAGE_NAME
-                        fi
-                        
-                        [[ -n "$IMAGE_NAME" ]] && return 0
+                        case "$sbom_choice" in
+                            1)
+                                # Try to extract image name from SBOM
+                                if grep -q "image" "$SBOM_FILE" 2>/dev/null; then
+                                    IMAGE_NAME=$(grep -o '"image"[^"]*"[^"]*"' "$SBOM_FILE" | head -1 | sed 's/.*"image"[^"]*"//' | sed 's/".*//')
+                                    [[ -n "$IMAGE_NAME" ]] && log "Extracted image name from SBOM: $IMAGE_NAME"
+                                fi
+                                
+                                if [[ -z "$IMAGE_NAME" ]]; then
+                                    log "Could not extract image name from SBOM. Please enter manually:"
+                                    read -p "Enter image name: " IMAGE_NAME
+                                fi
+                                
+                                [[ -n "$IMAGE_NAME" ]] && return 0
+                                ;;
+                            2)
+                                # Build container from SBOM
+                                log "Building container from SBOM packages..."
+                                
+                                # Create temporary directory for build
+                                BUILD_DIR="/tmp/sbom-build-$$"
+                                mkdir -p "$BUILD_DIR"
+                                
+                                # Parse SBOM and create Dockerfile
+                                create_dockerfile_from_sbom "$SBOM_FILE" "$BUILD_DIR/Dockerfile"
+                                
+                                if [[ -f "$BUILD_DIR/Dockerfile" ]]; then
+                                    IMAGE_TAG="sbom-build-$(date +%s)"
+                                    log "Building image from SBOM: $IMAGE_TAG"
+                                    
+                                    if (cd "$BUILD_DIR" && docker build -t "$IMAGE_TAG" .); then
+                                        IMAGE_NAME="$IMAGE_TAG"
+                                        log "Successfully built image from SBOM: $IMAGE_NAME"
+                                        rm -rf "$BUILD_DIR"
+                                        return 0
+                                    else
+                                        log "Failed to build image from SBOM"
+                                        rm -rf "$BUILD_DIR"
+                                        continue
+                                    fi
+                                else
+                                    log "Failed to create Dockerfile from SBOM"
+                                    rm -rf "$BUILD_DIR"
+                                    continue
+                                fi
+                                ;;
+                            *)
+                                echo "Invalid choice"
+                                continue
+                                ;;
+                        esac
                     fi
                     echo "Invalid number — try again."
                 done
