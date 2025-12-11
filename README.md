@@ -64,7 +64,26 @@ docker run --rm `
   stlcyber/container-scanner:latest ubuntu:20.04
 ```
 
-## Output Reports 📊
+## Interactive Mode Options 🔍
+
+When run without command-line arguments, the scanner provides an interactive menu with advanced options:
+
+1. **📋 List Local Images** - Browse and select from Docker images on your system
+2. **🐳 Search Host Containers** - Find all containers (Docker/Podman) running on the host
+3. **📄 Search SBOM Files** - Recursively find CycloneDX/SPDX SBOMs in current directory
+4. **🌐 Remote Image** - Enter any remote image name/tag (e.g., `nginx:latest`)
+5. **📦 Load from Tar File** - Recursively search entire directory tree for .tar/.tar.gz/.tgz files
+6. **🔨 Build from Dockerfile** - Build with Iron Bank base or use existing Dockerfile
+7. **✏️ Manual Entry** - Enter exact image name/ID
+
+### Advanced Features
+
+- **🔍 Recursive Tar Search**: Finds container images in .tar files anywhere in your directory structure
+- **🏗️ Iron Bank Builds**: Create containers using DoD-approved Iron Bank base images
+- **📊 Container Inspection**: Scan images from existing containers without rebuilding
+- **🔧 Custom Builds**: Build containers with volume mounts and custom configurations
+- **📋 SBOM Analysis**: Extract image information from CycloneDX and SPDX SBOM files
+- **🏠 Multi-Runtime Support**: Discovers containers from Docker and Podman
 
 After scanning, you'll find these reports in your output directory:
 
