@@ -254,7 +254,7 @@ The scanner automatically detects and uses pre-installed tools regardless of ver
 - **Docker/Podman**: Any version for container operations  
 - **MITRE SAF CLI**: Any version for compliance reporting
 
-If tools are missing, the script will attempt to install them automatically.
+**Smart Detection**: The script checks both system PATH and `~/.bashrc` for tool definitions, preventing unnecessary installations when tools are available through aliases, functions, or Docker containers.
 
 ## Compliance References 📚
 
