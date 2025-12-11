@@ -212,18 +212,30 @@ cat audit-results/*/reports/*_unified_compliance_*.csv > supply_chain_audit.csv
 git clone https://github.com/dadsocstl/container_harden.git
 cd container_harden
 
-# Build standard Ubuntu-based image
+# Option 1: Standard Ubuntu-based image (includes all tools)
 docker build -t stlcyber/container-scanner:latest .
 
-# OR build DoD-compliant RHEL UBI8 image
+# Option 2: DoD-compliant RHEL UBI8 image (includes all tools)
 docker build -f DoDEnv_Dockerfile -t stlcyber/container-scanner:dod .
 
-# Test
+# Option 3: Lightweight DoD image (assumes tools pre-installed)
+docker build -f Lightweight_DoDEnv_Dockerfile -t stlcyber/container-scanner:lightweight .
+
+# Test any version
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v $(pwd)/results:/results \
   stlcyber/container-scanner:latest ubuntu:20.04
 ```
+
+### Pre-installed Tools Support
+
+The scanner automatically detects and uses pre-installed tools regardless of version:
+- **Trivy**: Any version for vulnerability scanning
+- **Docker/Podman**: Any version for container operations  
+- **MITRE SAF CLI**: Any version for compliance reporting
+
+If tools are missing, the script will attempt to install them automatically.
 
 ## Compliance References 📚
 
