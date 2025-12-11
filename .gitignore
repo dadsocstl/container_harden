@@ -1,0 +1,70 @@
+# Build outputs and logs
+logs/
+stlcyber/
+hardening_*/
+test-results-*/
+script_log_*.txt
+saf-cli.log
+text.log
+
+# Generated reports and data
+*.html
+*.json
+*.xml
+*.tbl
+*.csv
+*.txt
+*.ckl
+*.xccdf
+*.hdf
+*.jdf
+*.cdx
+*.oval
+*.xccdf.xml
+*.hdf.json
+*.jdf.json
+*.cdx.json
+*.xhtml
+*.html.tpl
+*.tbl.tpl
+
+# Specific generated files
+report.html
+results.json
+sbom.*
+scan.*
+trivy-*
+vuln.txt
+tmp.json
+test_dod_approval.json
+test_threat_intel.json
+container_*.json
+container_*.xml
+guacamole_*.xml
+guacamole_*.json
+nist_compliance_summary.json
+table.tbl
+
+# Cache and temp directories
+trivy_db/
+trivy.zip
+ubuntu/
+ubuntu-scan/
+ubuntu2004_*/
+guacamole/
+Guacamole-server/
+guacd/
+zaproxy/
+test01/
+test02/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Docker ignore (if needed)
+.dockerignore
