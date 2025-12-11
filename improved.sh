@@ -192,13 +192,14 @@ select_image() {
         log "Select container image to scan (static analysis only — never runs):"
         echo
         echo "   1) List local images"
-        echo "   2) List all containers (running/stopped)"
-        echo "   3) Type remote image (e.g. nginx:latest)"
-        echo "   4) Load from .tar/.tar.gz file (recursive search)"
-        echo "   5) Build from Dockerfile (with Iron Bank base)"
-        echo "   6) Manual entry (exact name or ID)"
+        echo "   2) Search host for all containers (Docker/Podman)"
+        echo "   3) Search for SBOM files in current directory"
+        echo "   4) Type remote image (e.g. nginx:latest)"
+        echo "   5) Load from .tar/.tar.gz file (recursive search)"
+        echo "   6) Build from Dockerfile (with Iron Bank base)"
+        echo "   7) Manual entry (exact name or ID)"
         echo
-        read -p "Choose [1-6]: " choice
+        read -p "Choose [1-7]: " choice
 
         case "$choice" in
             1)
@@ -237,36 +238,44 @@ select_image() {
                 ;;
 
             2)
-                # List all containers (running and stopped)
-                if ! docker ps -a --format "{{.Names}} {{.Image}} {{.Status}}" > /dev/null 2>&1; then
-                    log "Docker command failed — is Docker running?"
-                    read -p "Press Enter to continue..."
-                    continue
+                # List all containers from all runtimes
+                log "Searching for containers on host..."
+                
+                # Check Docker containers
+                docker_containers=()
+                if command -v docker >/dev/null && docker ps -a --format "{{.Names}}|{{.Image}}|{{.Status}}|docker" 2>/dev/null; then
+                    mapfile -t docker_containers < <(docker ps -a --format "{{.Names}}|{{.Image}}|{{.Status}}|docker")
                 fi
-
-                mapfile -t containers < <(docker ps -a --format "{{.Names}}|{{.Image}}|{{.Status}}")
-
-                if [ ${#containers[@]} -eq 0 ]; then
-                    log "No containers found."
+                
+                # Check Podman containers
+                podman_containers=()
+                if command -v podman >/dev/null && podman ps -a --format "{{.Names}}|{{.Image}}|{{.Status}}|podman" 2>/dev/null; then
+                    mapfile -t podman_containers < <(podman ps -a --format "{{.Names}}|{{.Image}}|{{.Status}}|podman")
+                fi
+                
+                all_containers=("${docker_containers[@]}" "${podman_containers[@]}")
+                
+                if [ ${#all_containers[@]} -eq 0 ]; then
+                    log "No containers found on host."
                     read -p "Press Enter to continue..."
                     continue
                 fi
 
                 echo
-                printf "   %-4s %-20s %-30s %s\n" "No" "Container Name" "Image" "Status"
-                printf "   %-4s %-20s %-30s %s\n" "---" "--------------" "-----" "------"
-                for i in "${!containers[@]}"; do
-                    IFS='|' read -r name image status <<< "${containers[i]}"
-                    printf "   %3d) %-20s %-30s %s\n" $((i+1)) "$name" "$image" "$status"
+                printf "   %-4s %-15s %-30s %s\n" "No" "Runtime" "Container Name" "Image"
+                printf "   %-4s %-15s %-30s %s\n" "---" "-------" "--------------" "-----"
+                for i in "${!all_containers[@]}"; do
+                    IFS='|' read -r name image status runtime <<< "${all_containers[i]}"
+                    printf "   %3d) %-15s %-30s %s\n" $((i+1)) "$runtime" "$name" "$image"
                 done
                 echo
 
                 while true; do
                     read -p "Enter number to scan its image: " num
-                    if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#containers[@]} )); then
-                        IFS='|' read -r name image status <<< "${containers[$((num-1))]}"
+                    if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#all_containers[@]} )); then
+                        IFS='|' read -r name image status runtime <<< "${all_containers[$((num-1))]}"
                         IMAGE_NAME="$image"
-                        log "Selected image from container '$name': $IMAGE_NAME"
+                        log "Selected image from $runtime container '$name': $IMAGE_NAME"
                         return 0
                     fi
                     echo "Invalid number — try again."
@@ -274,6 +283,55 @@ select_image() {
                 ;;
 
             3)
+                # Search for SBOM files in current directory
+                log "Searching for SBOM files in current directory..."
+                mapfile -t sboms < <(find . -type f \( -name "*.json" -o -name "*.xml" -o -name "*.spdx" \) | xargs grep -l "bom\|SBOM\|CycloneDX\|SPDX" 2>/dev/null | sort)
+                
+                # Also look for common SBOM filenames
+                mapfile -t sbom_files < <(find . -type f \( -name "*sbom*" -o -name "*bom*" -o -name "*cyclonedx*" -o -name "*spdx*" \) | sort)
+                
+                all_sboms=("${sboms[@]}" "${sbom_files[@]}")
+                # Remove duplicates
+                all_sboms=($(printf "%s\n" "${all_sboms[@]}" | sort -u))
+                
+                if [ ${#all_sboms[@]} -eq 0 ]; then
+                    log "No SBOM files found in current directory."
+                    read -p "Press Enter to continue..."
+                    continue
+                fi
+
+                echo
+                printf "   %-4s %s\n" "No" "SBOM File"
+                printf "   %-4s %s\n" "---" "----------"
+                for i in "${!all_sboms[@]}"; do
+                    printf "   %3d) %s\n" $((i+1)) "${all_sboms[i]}"
+                done
+                echo
+
+                while true; do
+                    read -p "Enter number to analyze SBOM: " num
+                    if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#all_sboms[@]} )); then
+                        SBOM_FILE="${all_sboms[$((num-1))]}"
+                        log "Selected SBOM file: $SBOM_FILE"
+                        
+                        # Try to extract image name from SBOM
+                        if grep -q "image" "$SBOM_FILE" 2>/dev/null; then
+                            IMAGE_NAME=$(grep -o '"image"[^"]*"[^"]*"' "$SBOM_FILE" | head -1 | sed 's/.*"image"[^"]*"//' | sed 's/".*//')
+                            [[ -n "$IMAGE_NAME" ]] && log "Extracted image name from SBOM: $IMAGE_NAME"
+                        fi
+                        
+                        if [[ -z "$IMAGE_NAME" ]]; then
+                            log "Could not extract image name from SBOM. Please enter manually:"
+                            read -p "Enter image name: " IMAGE_NAME
+                        fi
+                        
+                        [[ -n "$IMAGE_NAME" ]] && return 0
+                    fi
+                    echo "Invalid number — try again."
+                done
+                ;;
+
+            4)
                 while true; do
                     read -p "Enter remote image (e.g. alpine:latest): " IMAGE_NAME
                     [[ -n "$IMAGE_NAME" ]] && return 0
@@ -281,7 +339,7 @@ select_image() {
                 done
                 ;;
 
-            4)
+            5)
                 log "Searching for .tar/.tar.gz files recursively..."
                 mapfile -t tars < <(find . -type f \( -name "*.tar" -o -name "*.tar.gz" -o -name "*.tgz" \) | sort)
                 if [ ${#tars[@]} -eq 0 ]; then
@@ -322,7 +380,7 @@ select_image() {
                 continue
                 ;;
 
-            5)
+            6)
                 # Build from Dockerfile with Iron Bank base
                 echo
                 echo "Build Options:"
@@ -398,12 +456,12 @@ EOF
                 fi
                 ;;
 
-            6)
+            7)
                 read -p "Enter exact image name/ID: " IMAGE_NAME
                 [[ -n "$IMAGE_NAME" ]] && return 0
                 ;;
 
-            *) echo "Invalid choice — pick 1-6" ;;
+            *) echo "Invalid choice — pick 1-7" ;;
         esac
     done
 }
