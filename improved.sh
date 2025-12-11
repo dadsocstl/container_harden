@@ -120,7 +120,7 @@ fi
 
 # === DEPENDENCY CHECK (with nice output) ===
 log "Checking required tools..."
-for cmd in trivy jq python3 realpath mktemp; do
+for cmd in jq python3 realpath mktemp; do
     printf "   %-12s " "$cmd"
     if command -v "$cmd" >/dev/null; then
         echo -e "\033[32m[OK]\033[0m"
@@ -130,6 +130,59 @@ for cmd in trivy jq python3 realpath mktemp; do
         exit 1
     fi
 done
+
+# Check optional tools (will install if missing)
+OPTIONAL_TOOLS=("trivy" "saf" "docker")
+for cmd in "${OPTIONAL_TOOLS[@]}"; do
+    printf "   %-12s " "$cmd"
+    if command -v "$cmd" >/dev/null; then
+        echo -e "\033[32m[OK]\033[0m"
+    else
+        echo -e "\033[33m[INSTALLING]\033[0m"
+        log "Installing $cmd..."
+        case "$cmd" in
+            trivy)
+                # Install Trivy
+                TRIVY_VERSION=0.57.1
+                if wget -q https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz; then
+                    tar -xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz
+                    sudo mv trivy /usr/local/bin/ 2>/dev/null || mv trivy /usr/local/bin/
+                    rm trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz
+                    log "Trivy installed successfully"
+                else
+                    log "ERROR: Failed to download Trivy"
+                    exit 1
+                fi
+                ;;
+            saf)
+                # Install MITRE SAF CLI
+                if command -v npm >/dev/null; then
+                    npm install -g @mitre/saf
+                    log "MITRE SAF CLI installed successfully"
+                else
+                    log "ERROR: npm not found, cannot install MITRE SAF CLI"
+                    exit 1
+                fi
+                ;;
+            docker)
+                # Try to install Docker/Podman
+                if command -v podman >/dev/null; then
+                    log "Podman already available"
+                elif command -v microdnf >/dev/null; then
+                    microdnf install -y podman && microdnf clean all
+                    log "Podman installed successfully"
+                elif command -v apt >/dev/null; then
+                    apt update && apt install -y podman
+                    log "Podman installed successfully"
+                else
+                    log "ERROR: Cannot install container runtime (podman/docker)"
+                    exit 1
+                fi
+                ;;
+        esac
+    fi
+done
+
 log "All dependencies ready!"
 # === IMAGE SELECTION FUNCTION ===
 # === IMAGE SELECTION FUNCTION ===
