@@ -212,8 +212,11 @@ cat audit-results/*/reports/*_unified_compliance_*.csv > supply_chain_audit.csv
 git clone https://github.com/dadsocstl/container_harden.git
 cd container_harden
 
-# Build image
+# Build standard Ubuntu-based image
 docker build -t stlcyber/container-scanner:latest .
+
+# OR build DoD-compliant RHEL UBI8 image
+docker build -f DoDEnv_Dockerfile -t stlcyber/container-scanner:dod .
 
 # Test
 docker run --rm \
